@@ -42,9 +42,9 @@ while(True):
 
 
 
-    	img_item = "my-image.png"
+    	#img_item = "my-image.png"
     	#img_item = "Cmy-image.png"
-    	cv2.imwrite(img_item, roi_color)
+    	#cv2.imwrite(img_item, roi_color)
     	#cv2.imwrite(img_item, roi_color)
     	color = (0,255,0)
     	stroke = 2
