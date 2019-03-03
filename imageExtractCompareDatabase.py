@@ -1,8 +1,3 @@
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
-import argparse
 import cv2 as cv
 import numpy as np
 import tensorflow as tf
@@ -12,7 +7,7 @@ import datetime
 import os
 
 deviceID =0
-hsvSen = 25
+hsvSen = 20
 TfModel = "c://tmp//output_graph.pb"
 TfName = "c://tmp//output_labels.txt"
 inputLayer = "Placeholder"
@@ -35,7 +30,6 @@ def GraphToMemory():
     tf.import_graph_def(graphDef)
   #print("Im Here")
   
-
 def addToDatabase(name,score,image):
   mydb = mysql.connector.connect(host="127.0.0.1",user="root",passwd="root")
   mycursor = mydb.cursor()
@@ -149,7 +143,6 @@ def main():
         break 
   cap.release()
   cv.destroyAllWindows()
-
-
+ 
 init()
 main()
