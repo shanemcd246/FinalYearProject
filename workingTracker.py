@@ -1,3 +1,7 @@
+#   Shane Mc Donagh
+#   Smart Sprayer
+#   Final Year Project
+
 import cv2
 import imutils
 import numpy as np
@@ -11,18 +15,16 @@ import io
 import sys
 
 global trackCount
-trackCount =1;
+trackCount = 1
 
 lock = threading.Lock()
-
-
 
 cap = cv2.VideoCapture(0)
 time.sleep(2.0)
 myDictList = []
-sendDictList = []
+detectedList = []
 dataToSend = []
-dataRecived = []
+dataReceived = []
 
 def recieveThread():
     global lock
@@ -51,7 +53,7 @@ def recieveThread():
                     print(full_msg[HEADERSIZE:])
                     d = pickle.loads(full_msg[HEADERSIZE:])
                     print("GOT..................."+str(d.get("index")))
-                    dataRecived.append(d)
+                    dataReceived.append(d)
                     new_msg = True
                     full_msg = b""
                     break
@@ -61,26 +63,30 @@ def recieveThread():
 
 def sendThread():
     global lock
-    while(1):
+    while True:
         HEADERSIZE = 10
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.bind((socket.gethostname(), 1243))
         s.listen(5)
-        d = {}
-        if(len(dataToSend)>0):
-            #print(len(dataToSend))
-            clientsocket, address = s.accept()
-            print(f"Connection from {address} has been established.")
-            msg = dataToSend[0]
-            msg = pickle.dumps(msg)
-            msg = bytes(f"{len(msg):<{HEADERSIZE}}", 'utf-8') + msg
-            print(msg)
-            clientsocket.send(msg)
-            lock.acquire()
-            del dataToSend[0]
-            lock.release()
+        if len(dataToSend) > 0:
+            if dataToSend[0].get("index") not in detectedList:
+                clientsocket, address = s.accept()
+                print(f"Connection from {address} has been established.")
+                msg = dataToSend[0]
+                msg = pickle.dumps(msg)
+                msg = bytes(f"{len(msg):<{HEADERSIZE}}", 'utf-8') + msg
+                print(msg)
+                clientsocket.send(msg)
+                lock.acquire()
+                del dataToSend[0]
+                lock.release()
+            else:
+                lock.acquire()
+                del dataToSend[0]
+                lock.release()
         else:
             time.sleep(1)
+
 
 def addImage(image, index):
     print("YOOOOOOOOOOOOOOOOOOOOO")
@@ -92,7 +98,6 @@ def addImage(image, index):
     e['index'] = index
     dataToSend.append(e)
     os.remove("temp.jpg")
-
 
 
 def updatetime():
@@ -122,17 +127,16 @@ def trackitem(loc_x, loc_y):
         for x in range(len(myDictList)):
             xDiff = abs(loc_x - myDictList[x].get("locX"))
             yDIff = abs(loc_y - myDictList[x].get("locY"))
-
-            if (xDiff + yDIff) < 70:
+            if (xDiff + yDIff) < 170:
                 if cDiff ==None:
                     cDiff = xDiff + yDIff
                     cIndex = x
                 elif (xDiff + yDIff) < cDiff:
                     cDiff = xDiff + yDIff
                     cIndex = x
-
-        if cIndex == None:
-            item = {"index": trackCount, "locX": loc_x, "locY": loc_y, "detected": 0, "time": 0, "sendTime": 0, "sprayed": 0}
+        if cIndex is None:
+            item = {"index": trackCount, "locX": loc_x, "locY": loc_y,
+                    "detected": 0, "time": 0, "sendTime": 0, "sprayed": 0}
             myDictList.append(item)
             trackCount += 1
             return myDictList[len(myDictList) - 1]
@@ -148,7 +152,8 @@ def checkForMatches(matches):
         if myDictList[q].get("index") == matches.get("index"):
             myDictList[q].update({"detected": 1})
 
-def spray(x,y):
+
+def spray(x, y):
     print("Sprayed " + str(x) + " " + str(y))
 
 
@@ -157,13 +162,11 @@ def main():
     thread.start()
     thread2 = threading.Thread(target=recieveThread)
     thread2.start()
-    while(True):
+    while True:
         success, frame = cap.read()
         frame = imutils.resize(frame, width=600)
-        dummyFrame = imutils.resize(frame, width=600)
-        (H, W) = dummyFrame.shape[:2]
-        #cv2.imshow('OG', frame)
-        blurred_frame = cv2.GaussianBlur(dummyFrame, (15, 15), 0)
+        dummy_frame = imutils.resize(frame, width=600)
+        blurred_frame = cv2.GaussianBlur(dummy_frame, (15, 15), 0)
 
         # Convert BGR to HSV
         hsv = cv2.cvtColor(blurred_frame, cv2.COLOR_BGR2HSV)
@@ -177,13 +180,14 @@ def main():
         rects = []
         for contour in contours:
             area = cv2.contourArea(contour)
-            if area > 4000:
-                cv2.drawContours(dummyFrame, contour, -1, (0, 255, 0), 3)
+            if area > 8000:
+                cv2.drawContours(dummy_frame, contour, -1, (0, 255, 0), 3)
                 rects.append(cv2.boundingRect(contour))
                 x, y, w, h = cv2.boundingRect(contour)
                 d = trackitem(round(x+(w*.5)), round(y+(h*.5)))
-                cv2.putText(dummyFrame, "Detected:"+str(d.get("detected")), (round(x+(w*.5)), round(y+(h*.5))), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255))
-                if d.get("detected") == 0 and d.get("sendTime") > 30:
+                cv2.putText(dummy_frame, "Detected:"+str(d.get("index")),
+                            (round(x+(w*.5)), round(y+(h*.5))), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255))
+                if d.get("detected") == 0 and d.get("sendTime") > 60:
                     for q in range(len(myDictList)):
                         if myDictList[q].get("index") == d.get("index"):
                             myDictList[q].update({"sendTime": 0})
@@ -194,15 +198,15 @@ def main():
                     for q in range(len(myDictList)):
                         if myDictList[q].get("index") == d.get("index"):
                             myDictList[q].update({"sprayed": 1})
+                            detectedList.append(myDictList[q].get("index"))
 
         updatetime()
-        if len(dataRecived) > 0:
-            print("OOOOOOOOOOOOOOOOOOOOOOo there is something")
-            checkForMatches(dataRecived[0])
-            del dataRecived[0]
+        if len(dataReceived) > 0:
+            checkForMatches(dataReceived[0])
+            del dataReceived[0]
 
         cv2.imshow('frame', frame)
-        cv2.imshow('dummyFrame', dummyFrame)
+        cv2.imshow('dummyFrame', dummy_frame)
         cv2.imshow('mask', mask)
 
         # Esc to quit
