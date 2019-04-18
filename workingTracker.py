@@ -26,13 +26,19 @@ detectedList = []
 dataToSend = []
 dataReceived = []
 
+def make_1080p():
+    cap.set(3, 1920)
+    cap.set(4, 1080)
+
 def recieveThread():
     global lock
+    HOST = '192.168.0.171'
     while True:
         try:
             HEADERSIZE = 10
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.connect((socket.gethostname(), 12243))
+            #s.connect((socket.gethostname(), 12243))
+            s.connect((HOST, 12243))
             full_msg = b''
             new_msg = True
             while True:
@@ -42,7 +48,7 @@ def recieveThread():
                     msglen = int(msg[:HEADERSIZE])
                     new_msg = False
 
-                print(f"full message length: {msglen}")
+                print("full message length:")
 
                 full_msg += msg
 
@@ -63,18 +69,20 @@ def recieveThread():
 
 def sendThread():
     global lock
+    HOST = '192.168.0.185'
     while True:
         HEADERSIZE = 10
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.bind((socket.gethostname(), 1243))
+        #s.bind((socket.gethostname(), 1243))
+        s.connect((HOST, 12243))
         s.listen(5)
         if len(dataToSend) > 0:
             if dataToSend[0].get("index") not in detectedList:
                 clientsocket, address = s.accept()
-                print(f"Connection from {address} has been established.")
+                print("Connection from "+address+" has been established.")
                 msg = dataToSend[0]
                 msg = pickle.dumps(msg)
-                msg = bytes(f"{len(msg):<{HEADERSIZE}}", 'utf-8') + msg
+                msg = bytes('{:<10}'.format(len(msg)), 'utf-8') + msg
                 print(msg)
                 clientsocket.send(msg)
                 lock.acquire()
@@ -162,6 +170,7 @@ def main():
     thread.start()
     thread2 = threading.Thread(target=recieveThread)
     thread2.start()
+    make_1080p
     while True:
         success, frame = cap.read()
         frame = imutils.resize(frame, width=600)
