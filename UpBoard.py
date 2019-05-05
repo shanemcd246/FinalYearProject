@@ -13,6 +13,7 @@ import os
 from PIL import Image
 import io
 import sys
+import time
 
 global trackCount
 trackCount = 1
@@ -25,14 +26,22 @@ myDictList = []
 detectedList = []
 dataToSend = []
 dataReceived = []
+threadStop = False
+
+def make_1080p():
+    cap.set(3, 1920)
+    cap.set(4, 1080)
 
 def recieveThread():
     global lock
-    while True:
+    HOST = '192.168.0.185'
+    HEADERSIZE = 10
+    
+    while not threadStop:
         try:
-            HEADERSIZE = 10
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.connect((socket.gethostname(), 12243))
+            #s.connect((socket.gethostname(), 12243))
+            s.connect(('192.168.0.100', 12243))
             full_msg = b''
             new_msg = True
             while True:
@@ -42,11 +51,11 @@ def recieveThread():
                     msglen = int(msg[:HEADERSIZE])
                     new_msg = False
 
-                print(f"full message length: {msglen}")
+                #print("full message length:")
 
                 full_msg += msg
 
-                print(len(full_msg))
+                #print(len(full_msg))
 
                 if len(full_msg) - HEADERSIZE == msglen:
                     print("full msg recvd")
@@ -59,23 +68,25 @@ def recieveThread():
                     break
 
         except:
-            time.sleep(1)
+            pass
 
 def sendThread():
     global lock
-    while True:
-        HEADERSIZE = 10
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.bind((socket.gethostname(), 1243))
+    HOST = '192.168.0.102'
+    HEADERSIZE = 10
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    #s.bind((socket.gethostname(), 1243))
+    s.bind(('192.168.0.102', 12345))
+    while not threadStop:
         s.listen(5)
         if len(dataToSend) > 0:
             if dataToSend[0].get("index") not in detectedList:
                 clientsocket, address = s.accept()
-                print(f"Connection from {address} has been established.")
+                #print("Connection from "+address+" has been established.")
                 msg = dataToSend[0]
                 msg = pickle.dumps(msg)
-                msg = bytes(f"{len(msg):<{HEADERSIZE}}", 'utf-8') + msg
-                print(msg)
+                msg = bytes('{:<10}'.format(len(msg)), 'utf-8') + msg
+                #print(msg)
                 clientsocket.send(msg)
                 lock.acquire()
                 del dataToSend[0]
@@ -85,17 +96,19 @@ def sendThread():
                 del dataToSend[0]
                 lock.release()
         else:
-            time.sleep(1)
+            pass
 
 
-def addImage(image, index):
-    print("YOOOOOOOOOOOOOOOOOOOOO")
+def addImage(image, index, lon,lat):
+    print("Sending Image")
     e = {}
     cv2.imwrite('temp.jpg', image)
     with open('temp.jpg', 'rb') as f:
         Nimage = f.read()
     e['image'] = Nimage
     e['index'] = index
+    e['lon'] = lon
+    e['lat'] = lat
     dataToSend.append(e)
     os.remove("temp.jpg")
 
@@ -117,7 +130,7 @@ def updatetime():
 def trackitem(loc_x, loc_y):
     global trackCount
     if len(myDictList) <= 0:
-        item = {"index": trackCount, "locX": loc_x, "locY": loc_y, "detected": 0, "time": 0, "sendTime": 0, "sprayed": 0}
+        item = {"index": trackCount, "locX": loc_x, "locY": loc_y, "detected": 0, "time": 0, "sendTime": 0, "sprayed": 0, "lon":"NOTSET","lat":"NOTSET", "name":"NOT SET"}
         myDictList.append(item)
         trackCount += 1
         return myDictList[0]
@@ -136,7 +149,7 @@ def trackitem(loc_x, loc_y):
                     cIndex = x
         if cIndex is None:
             item = {"index": trackCount, "locX": loc_x, "locY": loc_y,
-                    "detected": 0, "time": 0, "sendTime": 0, "sprayed": 0}
+                    "detected": 0, "time": 0, "sendTime": 0, "sprayed": 0, "lon":"NOTSET","lat":"NOTSET", "name":"NOT SET"}
             myDictList.append(item)
             trackCount += 1
             return myDictList[len(myDictList) - 1]
@@ -150,11 +163,15 @@ def trackitem(loc_x, loc_y):
 def checkForMatches(matches):
     for q in range(len(myDictList)):
         if myDictList[q].get("index") == matches.get("index"):
-            myDictList[q].update({"detected": 1})
+           myDictList[q].update({"detected": 1})
+           myDictList[q].update({"name": matches.get("name")})
 
 
 def spray(x, y):
     print("Sprayed " + str(x) + " " + str(y))
+    os.popen('sudo python PumpServo.py')
+    
+    
 
 
 def main():
@@ -162,6 +179,7 @@ def main():
     thread.start()
     thread2 = threading.Thread(target=recieveThread)
     thread2.start()
+    make_1080p
     while True:
         success, frame = cap.read()
         frame = imutils.resize(frame, width=600)
@@ -185,16 +203,33 @@ def main():
                 rects.append(cv2.boundingRect(contour))
                 x, y, w, h = cv2.boundingRect(contour)
                 d = trackitem(round(x+(w*.5)), round(y+(h*.5)))
-                cv2.putText(dummy_frame, "Detected:"+str(d.get("index")),
-                            (round(x+(w*.5)), round(y+(h*.5))), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255))
-                if d.get("detected") == 0 and d.get("sendTime") > 60:
+                cv2.putText(dummy_frame, "Track ID:"+str(d.get("index")),
+                            (round(x+(w*.2)), round(y+(h*.5))), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255),2)
+                cv2.putText(dummy_frame, "Name:"+str(d.get("name")),
+                            (round(x+(w*.2)), round(y+(h*.6))), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255),2)
+                lat ="NOTSET"
+                lon="NOTSET"
+                if d.get("detected") == 0 and d.get("sendTime") > 10:
                     for q in range(len(myDictList)):
                         if myDictList[q].get("index") == d.get("index"):
                             myDictList[q].update({"sendTime": 0})
+                            myCmd = os.popen('sudo cat /dev/ttyS4 | grep -E -m1 GPGGA').read()
+                            try:
+                                b = myCmd.split(",")
+                                lon = (float(b[2]) / 100)
+                                lat = (float(b[4]) / 100)
+                                if "W" in b[5]:
+                                    lat = -lat
+                            except:
+                                lon = "NOT SET"
+                                lat = "NOT SET"
+                            myDictList[q].update({"lon": lon})
+                            myDictList[q].update({"lat": lat})
                     crop_img = frame[y:y + h, x:x + w]
-                    addImage(crop_img, d.get("index"))
+                    addImage(crop_img, d.get("index"),lon,lat)
                 elif d.get("detected") == 1 and d.get("sprayed") == 0:
-                    spray(d.get("locX"), d.get("locY"))
+                    thread3 = threading.Thread(target=spray, args=(d.get("locX"), d.get("locY")))
+                    thread3.start()
                     for q in range(len(myDictList)):
                         if myDictList[q].get("index") == d.get("index"):
                             myDictList[q].update({"sprayed": 1})
@@ -212,7 +247,8 @@ def main():
         # Esc to quit
         if cv2.waitKey(1) & 0xFF == 27:
             break
-
+			
+    threadStop = True
     cap.release()
     cv2.destroyAllWindows()
 
